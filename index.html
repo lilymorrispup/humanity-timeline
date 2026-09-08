@@ -26,6 +26,8 @@
   .bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:4px 18px 8px}
   .bar .lbl{font-size:12px;color:var(--paper-dim);margin-right:2px}
   .chip{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;border:1px solid var(--ink-3);background:var(--ink-2);font-size:13px;color:var(--paper);white-space:nowrap}
+  select.chip{appearance:none;-webkit-appearance:none;padding-right:26px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a9a598' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;color:var(--river)}
+  select.chip option{background:var(--ink-2);color:var(--paper)}
   .chip .sw{width:10px;height:10px;border-radius:50%;background:var(--c,var(--paper-dim));flex:none}
   .chip[aria-pressed="false"]{opacity:.45}
   .chip[aria-pressed="false"] .sw{background:transparent;box-shadow:inset 0 0 0 2px var(--c,var(--paper-dim))}
@@ -40,7 +42,7 @@
   .tip{position:absolute;pointer-events:none;background:var(--ink-2);border:1px solid var(--ink-3);border-radius:6px;padding:6px 9px;font-size:12px;line-height:1.35;white-space:nowrap;transform:translate(-50%,-100%);display:none;box-shadow:0 6px 20px rgba(0,0,0,.35)}
   .tip b{font-family:var(--serif);font-weight:400;font-size:14px;color:var(--river)}
   .hint{position:absolute;right:14px;bottom:34px;font-size:12px;color:var(--paper-dim);pointer-events:none;opacity:.8}
-  .status{position:absolute;left:12px;bottom:34px;font-size:12px;color:var(--paper-dim);pointer-events:none;background:rgba(27,37,48,.7);padding:2px 8px;border-radius:6px}
+  .status{position:absolute;left:12px;top:28px;font-size:12px;color:var(--paper-dim);pointer-events:none;background:rgba(27,37,48,.7);padding:2px 8px;border-radius:6px}
   .status:empty{display:none}
 
   /* Панель события */
@@ -100,7 +102,6 @@
     .chip{font-size:12px;padding:4px 9px;gap:6px}
     .stage{height:50vh;min-height:300px}
     .hint{display:none}
-    .status{bottom:auto;top:28px}
     .detail{left:8px;right:8px;bottom:8px;max-width:none;padding:14px 16px 12px;max-height:52vh;overflow:auto}
     .detail h2{font-size:19px}.detail p{font-size:13.5px}
     .below{grid-template-columns:1fr;padding:8px 10px 30px;gap:8px}
@@ -126,6 +127,8 @@
 <div class="bar" id="layerBar" role="radiogroup" aria-label="Слои">
   <span class="lbl">Слои:</span>
   <button class="chip" id="popBtn" aria-pressed="true" style="--c:var(--river)"><span class="sw"></span>Население</button>
+  <select class="chip" id="region" aria-label="Регион населения"></select>
+  <button class="chip plain" id="yScaleBtn" title="Логарифмическая шкала показывает рост в разы; линейная с автомасштабом по видимому окну делает провалы заметнее">Ось: лог</button>
   <button class="chip radio" data-layer="none" aria-checked="true">Без второго слоя</button>
   <button class="chip radio" data-layer="religions" aria-checked="false">Религии</button>
   <button class="chip radio" data-layer="empires" aria-checked="false">Империи</button>
@@ -180,13 +183,13 @@
   </div>
 </section>
 
-<footer>Население — логарифмическая шкала. Оценки населения: HYDE, McEvedy &amp; Jones, ООН. Религии, империи и показатели — приближённые реконструкции по Johnson &amp; Grim, Таагепера, Our World in Data, Maddison Project. События из Wikidata подгружаются автоматически и не редактировались вручную.</footer>
+<footer>Население по умолчанию — логарифмическая шкала; региональные ряды показаны точками оценок с интерполяцией между ними. Оценки населения: HYDE, McEvedy &amp; Jones, ООН. Религии, империи и показатели — приближённые реконструкции по Johnson &amp; Grim, Таагепера, Our World in Data, Maddison Project. События из Wikidata подгружаются автоматически и не редактировались вручную.</footer>
 
 <script src="data.js"></script>
 <script>
 (() => {
 'use strict';
-const {CATS,POP,RELIGIONS,EMPIRES,INDICATORS,CANON}=window.HT_DATA;
+const {CATS,POP,REGIONS,RELIGIONS,EMPIRES,INDICATORS,CANON}=window.HT_DATA;
 CANON.forEach((ev,i)=>{ev.id='c'+i;ev.src='canon';if(ev.d===undefined)ev.d='—';});
 
 /* ---------- Шкалы ---------- */
@@ -197,19 +200,42 @@ let anchors=COMPRESSED;
 function u(year){const a=anchors;if(year<=a[0][0])return 0;for(let i=1;i<a.length;i++){if(year<=a[i][0]){const[y0,u0]=a[i-1],[y1,u1]=a[i];return u0+(year-y0)/(y1-y0)*(u1-u0);}}return 1;}
 function yearAt(uu){const a=anchors;if(uu<=0)return a[0][0];for(let i=1;i<a.length;i++){if(uu<=a[i][1]){const[y0,u0]=a[i-1],[y1,u1]=a[i];return y0+(uu-u0)/(u1-u0)*(y1-y0);}}return a[a.length-1][0];}
 
-const LOGP=POP.map(([y,p])=>[y,Math.log10(p)]);
+let region=REGIONS[0];
+const logSeries=r=>r.logv||(r.logv=r.v.map(([y,p])=>[y,Math.log10(p)]));
 function interp(arr,year,log){
   if(year<arr[0][0])return null;
   if(year>arr[arr.length-1][0])return null;
   for(let i=1;i<arr.length;i++){if(year<=arr[i][0]){const[y0,v0]=arr[i-1],[y1,v1]=arr[i];return v0+(year-y0)/(y1-y0)*(v1-v0);}}
   return null;
 }
-function popAt(year){
-  if(year<=LOGP[0][0])return Math.pow(10,LOGP[0][1]);
-  if(year>=LOGP[LOGP.length-1][0])return Math.pow(10,LOGP[LOGP.length-1][1]);
-  return Math.pow(10,interp(LOGP,year));
+function seriesAt(r,year,extend){
+  const L=logSeries(r);
+  if(year<L[0][0])return extend?Math.pow(10,L[0][1]):null;
+  if(year>=L[L.length-1][0])return Math.pow(10,L[L.length-1][1]);
+  return Math.pow(10,interp(L,year));
 }
-const LOG_MIN=-1.15, LOG_MAX=4.15;
+const popAt=(year,extend=true)=>seriesAt(region,year,extend);
+const worldAt=year=>seriesAt(REGIONS[0],year,true);
+let yScale='log';           // 'log' | 'linear'
+let YR={lo:-1.15,hi:4.15,ticks:[]};   // диапазон оси Y (в log10 для лог-шкалы, в млн для линейной)
+function niceStep(range,n){const raw=range/n,p=Math.pow(10,Math.floor(Math.log10(raw)));const m=raw/p;return(m<1.5?1:m<3.5?2:m<7.5?5:10)*p;}
+function computeYRange(){
+  // диапазон по видимому окну времени
+  let mn=Infinity,mx=-Infinity;const ya=yearAt(view.u0),yb=yearAt(view.u1);
+  for(let i=0;i<=200;i++){const v=popAt(yearAt(view.u0+(view.u1-view.u0)*i/200),false);if(v!=null){mn=Math.min(mn,v);mx=Math.max(mx,v);}}
+  for(const[y,v]of region.v){if(y>=ya&&y<=yb){mn=Math.min(mn,v);mx=Math.max(mx,v);}}
+  if(!isFinite(mn)){const all=region.v.map(a=>a[1]);mn=Math.min(...all);mx=Math.max(...all);}
+  if(yScale==='log'){
+    if(region===REGIONS[0]){YR={lo:-1.15,hi:4.15};}
+    else{const lo=Math.log10(mn),hi=Math.log10(mx);const pad=Math.max(.25,(hi-lo)*.12);YR={lo:lo-pad,hi:hi+pad};}
+    const ticks=[];for(let e=Math.ceil(YR.lo);e<=Math.floor(YR.hi);e++){ticks.push(Math.pow(10,e));if(YR.hi-YR.lo<3.2){const t3=3*Math.pow(10,e);if(Math.log10(t3)<=YR.hi)ticks.push(t3);}}
+    if(ticks.length<2){for(const m of[1,2,5])for(let e=Math.floor(YR.lo);e<=Math.ceil(YR.hi);e++){const t=m*Math.pow(10,e);const l=Math.log10(t);if(l>=YR.lo&&l<=YR.hi&&!ticks.includes(t))ticks.push(t);}ticks.sort((a,b)=>a-b);}
+    YR.ticks=ticks;
+  }else{
+    const top=mx*1.08,step=niceStep(top,5);const hi=Math.ceil(top/step)*step;
+    YR={lo:0,hi,ticks:[]};for(let v=step;v<=hi+1e-9;v+=step)YR.ticks.push(v);
+  }
+}
 
 /* ---------- Форматирование ---------- */
 const nf=n=>Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'\u2009');
@@ -251,15 +277,14 @@ const ERAS=[['Палеолит',-100000,-10000],['Неолит',-10000,-3300],['
 const isMobile=()=>W<760;
 const FONT=()=>`${isMobile()?11:12}px "Avenir Next","Segoe UI",system-ui,sans-serif`;
 const SERIF=(s)=>`${s}px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif`;
-const YLABELS={'-1':'100 тыс.','0':'1 млн','1':'10 млн','2':'100 млн','3':'1 млрд','4':'10 млрд'};
 function axisSpec(){
   if(layer==='religions')return{max:100,unit:'%',n:5};
   if(layer==='empires')return{max:36,unit:'млн км²',n:6};
   const ind=INDICATORS[layer];return{max:ind.v[ind.v.length-1][1]*1.1,unit:ind.unit,n:5};
 }
 function layout(){
-  ctx.font=FONT();
-  const lw=showPop?Math.max(...Object.values(YLABELS).map(t=>ctx.measureText(t).width)):0;
+  ctx.font=FONT();computeYRange();
+  const lw=showPop?Math.max(0,...YR.ticks.map(t=>ctx.measureText(fmtPop(t)).width)):0;
   let padR=isMobile()?10:16;
   if(layer!=='none'){const a=axisSpec();padR=Math.ceil(ctx.measureText((a.max>=1000?nf(a.max):Math.round(a.max*10)/10)+' '+a.unit).width)+12;}
   const padL=Math.ceil(lw)+14, eraH=22, axisH=28;
@@ -267,7 +292,7 @@ function layout(){
 }
 const xOf=(year,L)=>L.plotL+(u(year)-view.u0)/(view.u1-view.u0)*(L.plotR-L.plotL);
 const uOfX=(x,L)=>view.u0+(x-L.plotL)/(L.plotR-L.plotL)*(view.u1-view.u0);
-const yOf=(m,L)=>L.plotBot-(Math.log10(m)-LOG_MIN)/(LOG_MAX-LOG_MIN)*(L.plotBot-L.plotTop);
+const yOf=(m,L)=>yScale==='log'?L.plotBot-(Math.log10(m)-YR.lo)/(YR.hi-YR.lo)*(L.plotBot-L.plotTop):L.plotBot-(m-YR.lo)/(YR.hi-YR.lo)*(L.plotBot-L.plotTop);
 const yLin=(v,max,L)=>L.plotBot-v/max*(L.plotBot-L.plotTop);
 function resize(){const r=canvas.getBoundingClientRect();dpr=Math.min(window.devicePixelRatio||1,3);W=r.width;H=r.height;canvas.width=W*dpr;canvas.height=H*dpr;draw();}
 
@@ -370,7 +395,7 @@ function draw(){
 
   // сетка населения
   ctx.font=FONT();
-  if(showPop)for(let e=-1;e<=4;e++){const y=yOf(Math.pow(10,e),L);ctx.strokeStyle='rgba(236,230,214,.10)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(L.plotL,y);ctx.lineTo(L.plotR,y);ctx.stroke();}
+  if(showPop)for(const t of YR.ticks){const y=yOf(t,L);ctx.strokeStyle='rgba(236,230,214,.10)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(L.plotL,y);ctx.lineTo(L.plotR,y);ctx.stroke();}
 
   // второй слой
   drawSecondLayer(L);
@@ -399,12 +424,20 @@ function draw(){
 
   // население
   if(showPop){
-    const pts=[];const step=Math.max(1,Math.floor((L.plotR-L.plotL)/(isMobile()?260:520)));
-    for(let x=L.plotL;x<=L.plotR+step;x+=step){const xx=Math.min(x,L.plotR),y=yearAt(uOfX(xx,L));pts.push([xx,yOf(popAt(y),L),y]);}
-    if(layer==='none'){ctx.beginPath();ctx.moveTo(pts[0][0],L.plotBot);pts.forEach(p=>ctx.lineTo(p[0],p[1]));ctx.lineTo(pts[pts.length-1][0],L.plotBot);ctx.closePath();
+    const step=Math.max(1,Math.floor((L.plotR-L.plotL)/(isMobile()?260:520)));
+    if(region!==REGIONS[0]){ // мир для сравнения
+      ctx.beginPath();let st=false;
+      for(let x=L.plotL;x<=L.plotR+step;x+=step){const xx=Math.min(x,L.plotR),y=yearAt(uOfX(xx,L));const v=worldAt(y);const yy=yOf(v,L);if(yy<L.plotTop-2||yy>L.plotBot+2){st=false;continue;}if(!st){ctx.moveTo(xx,yy);st=true;}else ctx.lineTo(xx,yy);}
+      ctx.strokeStyle='rgba(236,230,214,.28)';ctx.lineWidth=1.2;ctx.setLineDash([2,4]);ctx.stroke();ctx.setLineDash([]);
+    }
+    const pts=[];
+    for(let x=L.plotL;x<=L.plotR+step;x+=step){const xx=Math.min(x,L.plotR),y=yearAt(uOfX(xx,L));const v=popAt(y,false);if(v==null)continue;pts.push([xx,yOf(v,L),y]);}
+    if(pts.length&&layer==='none'){ctx.beginPath();ctx.moveTo(pts[0][0],L.plotBot);pts.forEach(p=>ctx.lineTo(p[0],p[1]));ctx.lineTo(pts[pts.length-1][0],L.plotBot);ctx.closePath();
       const g=ctx.createLinearGradient(0,L.plotTop,0,L.plotBot);g.addColorStop(0,'rgba(233,200,130,.28)');g.addColorStop(1,'rgba(233,200,130,.02)');ctx.fillStyle=g;ctx.fill();}
     ctx.lineJoin='round';ctx.lineCap='round';
     const line=(dashed)=>{ctx.beginPath();let st=false;for(const p of pts){const pre=p[2]<-10000;if(pre!==dashed){st=false;continue;}if(!st){ctx.moveTo(p[0],p[1]);st=true;}else ctx.lineTo(p[0],p[1]);}};
+    // точки данных региона — чтобы было видно, где реконструкция, а где реальные оценки
+    if(region!==REGIONS[0]){ctx.fillStyle='#e9c882';for(const[y,v]of region.v){const x=xOf(y,L);if(x<L.plotL||x>L.plotR)continue;ctx.beginPath();ctx.arc(x,yOf(v,L),2.2,0,7);ctx.fill();}}
     ctx.setLineDash([]);ctx.strokeStyle='rgba(233,200,130,.25)';ctx.lineWidth=7;line(false);ctx.stroke();
     ctx.strokeStyle='#e9c882';ctx.lineWidth=2.2;line(false);ctx.stroke();
     ctx.setLineDash([4,5]);ctx.lineWidth=1.6;ctx.strokeStyle='rgba(233,200,130,.7)';line(true);ctx.stroke();ctx.setLineDash([]);
@@ -433,19 +466,21 @@ function draw(){
 
   // наведение
   if(hoverX!=null&&hoverX>=L.plotL&&hoverX<=L.plotR){
-    const y=yearAt(uOfX(hoverX,L)),p=popAt(y),py=showPop?yOf(p,L):L.plotTop+40;
+    const y=yearAt(uOfX(hoverX,L)),pr=popAt(y,false),p=worldAt(y),py=showPop&&pr!=null?yOf(pr,L):L.plotTop+40;
     ctx.strokeStyle='rgba(236,230,214,.35)';ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(hoverX,L.plotTop);ctx.lineTo(hoverX,L.plotBot);ctx.stroke();ctx.setLineDash([]);
-    if(showPop){ctx.fillStyle='#e9c882';ctx.beginPath();ctx.arc(hoverX,py,4,0,7);ctx.fill();ctx.strokeStyle='#1b2530';ctx.lineWidth=2;ctx.stroke();}
+    if(showPop&&pr!=null){ctx.fillStyle='#e9c882';ctx.beginPath();ctx.arc(hoverX,py,4,0,7);ctx.fill();ctx.strokeStyle='#1b2530';ctx.lineWidth=2;ctx.stroke();}
     let extra='';
     if(layer==='religions'&&y>=RELIGIONS.years[0]){const ys=RELIGIONS.years,yy=Math.min(y,ys[ys.length-1]);const parts=RELIGIONS.series.map(s=>{const v=yy>=ys[ys.length-1]?s.v[s.v.length-1]:interp(ys.map((yr,i)=>[yr,s.v[i]]),yy);return[s.name,(v||0)/p*100];}).filter(a=>a[1]>=1).sort((a,b)=>b[1]-a[1]).slice(0,4);extra=parts.map(a=>`${a[0]} ${a[1].toFixed(0)}%`).join('<br>');}
     else if(layer!=='none'&&layer!=='empires'){const ind=INDICATORS[layer],v=ind.v;if(y>=v[0][0]){const val=y>=v[v.length-1][0]?v[v.length-1][1]:interp(v,y);extra=`${ind.name}: ${val>=1000?nf(val):Math.round(val*10)/10} ${ind.unit}`;}}
-    tip.innerHTML=`<b>${fmtPop(p)}</b><br>${fmtYear(y)}${y<-10000?'<br><span style="opacity:.7">грубая оценка</span>':''}${extra?'<br>'+extra:''}`;
+    const head=region===REGIONS[0]?`<b>${fmtPop(p)}</b>`:(pr!=null?`<b>${fmtPop(pr)}</b> ${region.name}<br><span style="opacity:.7">мир: ${fmtPop(p)}</span>`:`<span style="opacity:.7">${region.name}: нет данных</span><br>мир: ${fmtPop(p)}`);
+    tip.innerHTML=`${head}<br>${fmtYear(y)}${y<-10000?'<br><span style="opacity:.7">грубая оценка</span>':''}${extra?'<br>'+extra:''}`;
     tip.style.display='block';tip.style.left=Math.max(80,Math.min(W-80,hoverX))+'px';tip.style.top=Math.max(L.plotTop+40,py-12)+'px';
   }else tip.style.display='none';
 
   // маска по краям и подписи оси Y
   ctx.fillStyle='#1b2530';ctx.fillRect(0,L.plotTop,L.plotL-1,L.plotBot-L.plotTop);ctx.fillRect(L.plotR+1,L.plotTop,W-L.plotR,L.plotBot-L.plotTop);
-  if(showPop){ctx.font=FONT();ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillStyle='#a9a598';for(let e=-1;e<=4;e++)ctx.fillText(YLABELS[e],L.plotL-8,yOf(Math.pow(10,e),L));}
+  if(showPop){ctx.font=FONT();ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillStyle='#a9a598';for(const t of YR.ticks)ctx.fillText(fmtPop(t),L.plotL-8,yOf(t,L));
+    if(region!==REGIONS[0]){ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillStyle='#e9c882';ctx.font=SERIF(isMobile()?13:15);ctx.fillText(region.name,L.plotL+10,L.plotBot-(isMobile()?20:22));ctx.fillStyle='#a9a598';ctx.font=FONT();ctx.fillText('пунктир — мир',L.plotL+10,L.plotBot-6);}}
   if(layer!=='none'){const a=axisSpec();rightAxis(L,a.max,a.unit,a.n);}
   if(filters.onlyView)scheduleList();
 }
@@ -503,8 +538,10 @@ function select(ev,fly){
   document.getElementById('dWhen').textContent=fmtRange(ev);
   const txt=document.getElementById('dText');
   document.getElementById('dDeaths').textContent=ev.d&&ev.d!=='—'?ev.d:'—';
-  const before=popAt(ev.s),after=popAt(ev.e+1);
-  document.getElementById('dPop').textContent=ev.s===ev.e||Math.abs(after/before-1)<.01?'около '+fmtPop(before):`${fmtPop(before)} → ${fmtPop(after)}`;
+  const before=worldAt(ev.s),after=worldAt(ev.e+1);
+  let popTxt=ev.s===ev.e||Math.abs(after/before-1)<.01?'около '+fmtPop(before):`${fmtPop(before)} → ${fmtPop(after)}`;
+  if(region!==REGIONS[0]){const rb=popAt(ev.s,false),ra=popAt(ev.e+1,false);if(rb!=null&&ra!=null)popTxt+=` · ${region.name}: ${ev.s===ev.e||Math.abs(ra/rb-1)<.01?fmtPop(rb):fmtPop(rb)+' → '+fmtPop(ra)}`;}
+  document.getElementById('dPop').textContent=popTxt;
   const links=document.getElementById('dLinks');links.innerHTML='';
   if(ev.title)links.innerHTML+=`<a href="https://ru.wikipedia.org/wiki/${encodeURIComponent(ev.title)}" target="_blank" rel="noopener">Википедия</a>`;
   else links.innerHTML+=`<a href="https://ru.wikipedia.org/w/index.php?search=${encodeURIComponent(ev.n)}" target="_blank" rel="noopener">Искать в Википедии</a>`;
@@ -585,6 +622,11 @@ rowsEl.addEventListener('click',e=>{const b=e.target.closest('.row');if(!b)retur
 function plural(n,a,b,c){const m=n%100,l=n%10;return(m>=11&&m<=19)?c:l===1?a:(l>=2&&l<=4)?b:c;}
 
 /* ---------- Слои и шкала ---------- */
+const regionEl=document.getElementById('region');
+{let grp=null;for(const r of REGIONS){if(!grp||grp.label!==r.group){grp=document.createElement('optgroup');grp.label=r.group;regionEl.appendChild(grp);}const o=document.createElement('option');o.value=r.id;o.textContent=r.name;grp.appendChild(o);}}
+regionEl.onchange=()=>{region=REGIONS.find(r=>r.id===regionEl.value)||REGIONS[0];draw();};
+const yScaleBtn=document.getElementById('yScaleBtn');
+yScaleBtn.onclick=()=>{yScale=yScale==='log'?'linear':'log';yScaleBtn.textContent=yScale==='log'?'Ось: лог':'Ось: линейная';draw();};
 document.getElementById('popBtn').onclick=e=>{showPop=!showPop;e.currentTarget.setAttribute('aria-pressed',String(showPop));draw();};
 document.querySelectorAll('.chip.radio').forEach(b=>b.onclick=()=>{layer=b.dataset.layer;document.querySelectorAll('.chip.radio').forEach(x=>x.setAttribute('aria-checked',String(x===b)));draw();});
 const scaleBtn=document.getElementById('scaleBtn');
