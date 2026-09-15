@@ -190,11 +190,12 @@
 (() => {
 'use strict';
 const {CATS,POP,REGIONS,RELIGIONS,EMPIRES,INDICATORS,CANON}=window.HT_DATA;
-CANON.forEach((ev,i)=>{ev.id='c'+i;ev.src='canon';if(ev.d===undefined)ev.d='—';});
+const CURRENT_YEAR=new Date().getFullYear();
+CANON.forEach((ev,i)=>{ev.id='c'+i;ev.src='canon';if(ev.ongoing)ev.e=CURRENT_YEAR;if(ev.d===undefined)ev.d='—';});
 
 /* ---------- Шкалы ---------- */
-const Y_MIN=-100000, Y_MAX=2030;
-const COMPRESSED=[[-100000,0],[-10000,.10],[-3000,.20],[1,.34],[1000,.45],[1500,.57],[1800,.70],[1900,.82],[2030,1]];
+const Y_MIN=-100000, Y_MAX=Math.max(2030,CURRENT_YEAR+4);
+const COMPRESSED=[[-100000,0],[-10000,.10],[-3000,.20],[1,.34],[1000,.45],[1500,.57],[1800,.70],[1900,.82],[Y_MAX,1]];
 const LINEAR=[[Y_MIN,0],[Y_MAX,1]];
 let anchors=COMPRESSED;
 function u(year){const a=anchors;if(year<=a[0][0])return 0;for(let i=1;i<a.length;i++){if(year<=a[i][0]){const[y0,u0]=a[i-1],[y1,u1]=a[i];return u0+(year-y0)/(y1-y0)*(u1-u0);}}return 1;}
@@ -241,9 +242,9 @@ function computeYRange(){
 const nf=n=>Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'\u2009');
 function fmtYear(y,short){y=Math.round(y);if(y<=0)return nf(Math.max(1,-y))+(short?' до н.э.':' г. до н.э.');if(y<1000)return y+(short?' н.э.':' г. н.э.');return short?String(y):y+' г.';}
 function fmtRange(ev){
+  if(ev.ongoing)return fmtYear(ev.s)+' — наст. время';
   if(ev.s===ev.e)return fmtYear(ev.s);
   if(ev.s<=0&&ev.e<=0)return nf(-ev.s)+'–'+nf(-ev.e)+' гг. до н.э.';
-  if(ev.e>=2026)return fmtYear(ev.s)+' — наст. время';
   return fmtYear(ev.s,true)+' – '+fmtYear(ev.e,true);
 }
 function fmtPop(m){if(m<1)return nf(m*1000)+' тыс.';if(m<1000)return(m<10?m.toFixed(1).replace('.',','):nf(m))+' млн';return(m/1000).toFixed(m<10000?2:1).replace('.',',').replace(/,?0+$/,'')+' млрд';}
@@ -271,7 +272,7 @@ let ALL=CANON.slice(); // канон + wikidata
 let filtered=[];       // после фильтров (для списка)
 let visibleSet=new Set(); // события, отрисованные маркерами
 
-const ERAS=[['Палеолит',-100000,-10000],['Неолит',-10000,-3300],['Бронзовый век',-3300,-1200],['Античность',-1200,500],['Средние века',500,1500],['Новое время',1500,1800],['Индустриальная эпоха',1800,1945],['Наше время',1945,2030]];
+const ERAS=[['Палеолит',-100000,-10000],['Неолит',-10000,-3300],['Бронзовый век',-3300,-1200],['Античность',-1200,500],['Средние века',500,1500],['Новое время',1500,1800],['Индустриальная эпоха',1800,1945],['Наше время',1945,Y_MAX]];
 
 /* ---------- Геометрия ---------- */
 const isMobile=()=>W<760;
@@ -602,7 +603,7 @@ function sortedList(){
   return arr;
 }
 function rowHTML(ev){
-  const y=ev.s===ev.e?fmtYear(ev.s,true):(ev.s<=0?fmtYear(ev.s,true):ev.s+'–'+(ev.e>=2026?'…':ev.e));
+  const y=ev.ongoing?ev.s+'–…':ev.s===ev.e?fmtYear(ev.s,true):(ev.s<=0?fmtYear(ev.s,true):ev.s+'–'+ev.e);
   const right=sortBy==='imp'?'важность '+ev.i:(ev.d&&ev.d!=='—'?ev.d:'');
   return`<button class="row${ev===selected?' on':''}" data-id="${ev.id}" style="--c:${CATS[ev.c].color}"><i></i><span class="y">${y}</span><span class="n">${ev.n}${ev.src==='wd'?'<small>Wikidata</small>':''}</span><span class="d">${right}</span></button>`;
 }
@@ -664,8 +665,8 @@ function parseRows(rows,c){
   const seen=new Set(),out=[];
   for(const r of rows){
     const q=(r.item.value.match(/Q\d+$/)||[])[0];if(!q||seen.has(q))continue;
-    const s=yearOf(r.start&&r.start.value);if(s==null||s<-200000||s>2026)continue;
-    let e=yearOf(r.end&&r.end.value);if(e==null||e<s)e=s;if(e>2026)e=2026;
+    const s=yearOf(r.start&&r.start.value);if(s==null||s<-200000||s>CURRENT_YEAR)continue;
+    let e=yearOf(r.end&&r.end.value);if(e==null||e<s)e=s;if(e>CURRENT_YEAR)e=CURRENT_YEAR;
     const ru=r.ru&&r.ru.value,en=r.en&&r.en.value;if(!ru&&!en)continue;
     const sl=+r.sl.value;seen.add(q);
     const dn=r.deaths?+r.deaths.value:null;
